@@ -1,171 +1,181 @@
-#include<gl/glut.h>
-#include<math.h>
-#include<stdio.h>
-struct screenPt {
-	int x;
-	int y;
-};
-typedef enum { limacon = 1, cardioid = 2, threeLeaf = 3, spiral = 4 } curveName;
-int w = 600, h = 500;
-int curve = 1;
-int red = 0, green = 0, blue = 0;
-void myinit(void) {
-	glClearColor(1.0, 1.0, 1.0, 1.0);
-	glMatrixMode(GL_PROJECTION);
-	gluOrtho2D(0.0, 200.0, 0.0, 150.0);
-}
-void lineSegment(screenPt p1, screenPt p2) {
+// algorithm for polygon clipping 
+#include<iostream>
+#include<GL/glut.h>
+using namespace std;
+int poly_size, poly_points[20][2], org_poly_size, org_poly_points[20][2], clipper_size, clipper_points[20][2];
+const int MAX_POINTS = 20;
 
-	glBegin(GL_LINES);
-	glVertex2i(p1.x, p1.y);
-	glVertex2i(p2.x, p2.y);
+
+// Returns x-value of point of intersection of two 
+// lines 
+
+void drawPoly(int p[][2], int n) {
+	glBegin(GL_POLYGON);
+	for (int i = 0; i < n; i++)
+		glVertex2f(p[i][0], p[i][1]);
 	glEnd();
-	glFlush();
 }
-void drawCurve(int curveNum) {
-	const double twoPi = 6.283185;
-	const int a = 175, b = 60;
-	float r, theta, dtheta = 1.0 / float(a);
-	int x0 = 200, y0 = 250;
-	screenPt curvePt[2];
-	curve = curveNum;
-	glColor3f(red, green, blue);
-	curvePt[0].x = x0;
-	curvePt[0].y = y0;
-	glClear(GL_COLOR_BUFFER_BIT);
-	switch (curveNum) {
-	case limacon: curvePt[0].x += a + b; break;
-	case cardioid: curvePt[0].x += a + a; break;
-	case threeLeaf: curvePt[0].x += a; break;
-	case spiral: break;
-	default: break;
-	}
-	theta = dtheta;
-	while (theta < twoPi) {
-		switch (curveNum) {
-		case limacon: r = a * cos(theta) + b; break;
-		case cardioid: r = a * (1 + cos(theta)); break;
-		case threeLeaf: r = a * cos(3 * theta); break;
-		case spiral: r = (a / 4.0) * theta; break;
-		default: break;
+
+int x_intersect(int x1, int y1, int x2, int y2,
+	int x3, int y3, int x4, int y4)
+{
+	int num = (x1 * y2 - y1 * x2) * (x3 - x4) -
+		(x1 - x2) * (x3 * y4 - y3 * x4);
+	int den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+	return num / den;
+}
+
+// Returns y-value of point of intersectipn of 
+// two lines 
+int y_intersect(int x1, int y1, int x2, int y2,
+	int x3, int y3, int x4, int y4)
+{
+	int num = (x1 * y2 - y1 * x2) * (y3 - y4) -
+		(y1 - y2) * (x3 * y4 - y3 * x4);
+	int den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+	return num / den;
+}
+
+// This functions clips all the edges w.r.t one clip 
+// edge of clipping area 
+void clip(int poly_points[][2], int& poly_size,
+	int x1, int y1, int x2, int y2)
+{
+	int new_points[MAX_POINTS][2], new_poly_size = 0;
+
+	// (ix,iy),(kx,ky) are the co-ordinate values of 
+	// the points 
+	for (int i = 0; i < poly_size; i++)
+	{
+		// i and k form a line in polygon 
+		int k = (i + 1) % poly_size;
+		int ix = poly_points[i][0], iy = poly_points[i][1];
+		int kx = poly_points[k][0], ky = poly_points[k][1];
+
+		// Calculating position of first point 
+		// w.r.t. clipper line 
+		int i_pos = (x2 - x1) * (iy - y1) - (y2 - y1) * (ix - x1);
+
+		// Calculating position of second point 
+		// w.r.t. clipper line 
+		int k_pos = (x2 - x1) * (ky - y1) - (y2 - y1) * (kx - x1);
+
+		// Case 1 : When both points are inside 
+		if (i_pos >= 0 && k_pos >= 0)
+		{
+			//Only second point is added 
+			new_points[new_poly_size][0] = kx;
+			new_points[new_poly_size][1] = ky;
+			new_poly_size++;
 		}
-		curvePt[1].x = x0 + r * cos(theta);
-		curvePt[1].y = y0 + r * sin(theta);
-		lineSegment(curvePt[0], curvePt[1]);
 
-		curvePt[0].x = curvePt[1].x;
-		curvePt[0].y = curvePt[1].y;
-		theta += dtheta;
+		// Case 2: When only first point is outside 
+		else if (i_pos < 0 && k_pos >= 0)
+		{
+			// Point of intersection with edge 
+			// and the second point is added 
+			new_points[new_poly_size][0] = x_intersect(x1,
+				y1, x2, y2, ix, iy, kx, ky);
+			new_points[new_poly_size][1] = y_intersect(x1,
+				y1, x2, y2, ix, iy, kx, ky);
+			new_poly_size++;
+
+			new_points[new_poly_size][0] = kx;
+			new_points[new_poly_size][1] = ky;
+			new_poly_size++;
+		}
+
+		// Case 3: When only second point is outside 
+		else if (i_pos >= 0 && k_pos < 0)
+		{
+			//Only point of intersection with edge is added 
+			new_points[new_poly_size][0] = x_intersect(x1,
+				y1, x2, y2, ix, iy, kx, ky);
+			new_points[new_poly_size][1] = y_intersect(x1,
+				y1, x2, y2, ix, iy, kx, ky);
+			new_poly_size++;
+		}
+
+		// Case 4: When both points are outside 
+		else
+		{
+			//No points are added 
+		}
+	}
+
+	// Copying new points into original array 
+	// and changing the no. of vertices 
+	poly_size = new_poly_size;
+	for (int i = 0; i < poly_size; i++)
+	{
+		poly_points[i][0] = new_points[i][0];
+		poly_points[i][1] = new_points[i][1];
 	}
 }
 
-void colorMenu(int id) {
-	switch (id) {
 
-	case 0:
-		break;
-	case 1:
-		red = 0;
-		green = 0;
-		blue = 1;
-
-		break;
-	case 2:
-		red = 0;
-		green = 1;
-		blue = 0;
-		break;
-
-	case 4:
-		red = 1;
-		green = 0;
-		blue = 0;
-
-		break;
-	case 3:
-		red = 0;
-		green = 1;
-		blue = 1;
-
-		break;
-	case 5:
-		red = 1;
-		green = 0;
-		blue = 1;
-		break;
-	case 6:
-		red = 1;
-		green = 1;
-		blue = 0;
-		break;
-	case 7:
-		red = 1;
-		green = 1;
-		blue = 1;
-		break;
-	default:
-		break;
-
-	}
-	drawCurve(curve);
-}
-void main_menu(int id) {
-
-	switch (id) {
-
-	case 3: exit(0);
-	default: break;
-	}
-}
-void mydisplay() {
-	/*int curveNum=1;
-	glClear(GL_COLOR_BUFFER_BIT);
-	/*printf("Enter the integer value corresponding to one of the followinf curve names:\n");
-	printf("1 - limacon\n2 - cardioid\n3 - threeleaf\n4 - spiral\n");
-	scanf_s("%d", &curveNum);*/
-
-	/*if (curveNum == 1 || curveNum == 2 || curveNum == 3 || curveNum == 4)
-	drawCurve(curveNum);*/
-
-}
-
-void myreshape(int nw, int nh) {
+void init() {
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluOrtho2D(0.0, (double)nw, 0.0, (double)nh);
+	glOrtho(0.0, 500.0, 0.0, 500.0, 0.0, 500.0);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void main(int argc, char** argv) {
+void display()
+{
+	init();
+	glColor3f(1.0f, 0.0f, 0.0f);
+	drawPoly(clipper_points, clipper_size);
+
+	glColor3f(0.0f, 1.0f, 0.0f);
+	drawPoly(org_poly_points, org_poly_size);
+	//i and k are two consecutive indexes 
+
+	for (int i = 0; i < clipper_size; i++)
+	{
+		int k = (i + 1) % clipper_size;
+
+		// We pass the current array of vertices, it's size 
+		// and the end points of the selected clipper line 
+		clip(poly_points, poly_size, clipper_points[i][0],
+			clipper_points[i][1], clipper_points[k][0],
+			clipper_points[k][1]);
+	}
+
+	glColor3f(0.0f, 0.0f, 1.0f);
+	drawPoly(poly_points, poly_size);
+	glFlush();
+}
+
+//Driver code 
+int main(int argc, char* argv[])
+{
+	printf("Enter no. of vertices: \n");
+	scanf_s("%d", &poly_size);
+	org_poly_size = poly_size;
+	for (int i = 0; i < poly_size; i++)
+	{
+		printf("Polygon Vertex:\n");
+		scanf_s("%d%d", &poly_points[i][0], &poly_points[i][1]);
+		org_poly_points[i][0] = poly_points[i][0];
+		org_poly_points[i][1] = poly_points[i][1];
+	}
+
+	printf("Enter no. of vertices of clipping window:");
+	scanf_s("%d", &clipper_size);
+	for (int i = 0; i < clipper_size; i++)
+	{
+		printf("Clip Vertex:\n");
+		scanf_s("%d%d", &clipper_points[i][0], &clipper_points[i][1]);
+	}
+
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
-	glutInitWindowSize(w, h);
+	glutInitWindowSize(400, 400);
 	glutInitWindowPosition(100, 100);
-	glutCreateWindow("Drawing curves");
-	int curveId = glutCreateMenu(drawCurve);
-	glutAddMenuEntry("Limacon", 1);
-	glutAddMenuEntry("Cardioid", 2);
-	glutAddMenuEntry("Threeleaf", 3);
-	glutAddMenuEntry("Spiral", 4);
-	glutAttachMenu(GLUT_LEFT_BUTTON);
-	int colorId = glutCreateMenu(colorMenu);
-	glutAddMenuEntry("Red", 4);
-	glutAddMenuEntry("Green", 2);
-	glutAddMenuEntry("Blue", 1);
-	glutAddMenuEntry("Black", 0);
-	glutAddMenuEntry("Yellow", 6);
-	glutAddMenuEntry("Cyan", 3);
-	glutAddMenuEntry("Magenta", 5);
-	glutAddMenuEntry("white", 7);
-	glutAttachMenu(GLUT_LEFT_BUTTON);
-	glutCreateMenu(main_menu);
-	glutAddSubMenu("drawCurve", curveId);
-	glutAddSubMenu("colors", colorId);
-	glutAddMenuEntry("quit", 3);
-	glutAttachMenu(GLUT_LEFT_BUTTON);
-	myinit();
-	glutDisplayFunc(mydisplay);
-	glutReshapeFunc(myreshape);
-
+	glutCreateWindow("Polygon Clipping!");
+	glutDisplayFunc(display);
 	glutMainLoop();
+	return 0;
 }
